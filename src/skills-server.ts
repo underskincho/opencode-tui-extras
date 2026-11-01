@@ -19,22 +19,46 @@ function sameLocation(
 export async function installSkillsServer(context: Context) {
   const storageKey = disabledSkillsStorageKey(context.location.project.id);
   const disabled = new Set(normalizeDisabledSkillIDs(await context.storage.get(storageKey)));
-  let catalog: SkillDescriptor[] = [];
+  // Descriptors of every Skill the plugin has seen, from either the live
+  // catalog (read on every list) or the transform callback (which records the
+  // source before hiding disabled Skills). The live catalog excludes disabled
+  // Skills, so their descriptors must persist; otherwise toggling a Skill off
+  // would make it vanish from the sidebar. Rebuilding on every read (instead of
+  // one snapshot) is what makes Skills that load late — e.g. OpenCode's
+  // built-in Skills, which load after plugin setup — appear once they exist.
+  const seen = new Map<string, SkillDescriptor>();
   let filter: Awaited<ReturnType<Context["skill"]["transform"]>> | undefined;
   let installing: Promise<void> | undefined;
+
+  const toDescriptor = (skill: {
+    id: unknown;
+    name: unknown;
+    description?: string;
+    autoinvoke?: boolean;
+    path: unknown;
+  }): SkillDescriptor => ({
+    id: String(skill.id),
+    name: String(skill.name),
+    description: skill.description,
+    autoinvoke: skill.autoinvoke,
+    path: String(skill.path),
+  });
 
   const ensureFilter = async () => {
     if (filter) return;
     if (installing) return installing;
     installing = (async () => {
+      // The transform hides disabled Skills from the live catalog (so the model
+      // and auto-invoke cannot use them). It also records every descriptor present
+      // BEFORE hiding, so Skills disabled before this plugin started keep their
+      // metadata in the sidebar even though they are absent from the live
+      // catalog. The callback re-runs on every reload (e.g. after a toggle),
+      // keeping the records current.
       const registration = await context.skill.transform((editor) => {
-        catalog = editor.list().map((skill) => ({
-          id: String(skill.id),
-          name: String(skill.name),
-          description: skill.description,
-          autoinvoke: skill.autoinvoke,
-          path: String(skill.path),
-        }));
+        for (const skill of editor.list()) {
+          const descriptor = toDescriptor(skill);
+          seen.set(descriptor.id, descriptor);
+        }
         for (const id of disabled) editor.remove(id);
       });
       filter = registration;
@@ -49,8 +73,13 @@ export async function installSkillsServer(context: Context) {
 
   const list = async () => {
     await ensureFilter();
-    await context.skill.list();
-    return { skills: managedSkills(catalog, disabled) };
+    const live = (await context.skill.list()).data.map(toDescriptor);
+    for (const descriptor of live) seen.set(descriptor.id, descriptor);
+    const liveIDs = new Set(live.map((descriptor) => descriptor.id));
+    for (const id of [...seen.keys()]) {
+      if (!liveIDs.has(id) && !disabled.has(id)) seen.delete(id);
+    }
+    return { skills: managedSkills([...seen.values()], disabled) };
   };
 
   const rpc = await context.rpc.register(SkillsRpc, {
@@ -66,8 +95,8 @@ export async function installSkillsServer(context: Context) {
     },
     setGroupDisabled: async (input) => {
       const value = input as { ids: string[]; disabled: boolean };
-      // Materialize the catalog first (list() runs ensureFilter + context.skill.list(),
-      // which is what populates `catalog`), then ignore ids not installed in this project.
+      // Materialize the catalog first (list() reads the live catalog and
+      // rebuilds it), then ignore ids not installed in this project.
       const { skills: catalogSkills } = await list();
       const known = new Set(catalogSkills.map((skill) => skill.id));
       const ids = Array.isArray(value.ids)
@@ -83,9 +112,10 @@ export async function installSkillsServer(context: Context) {
     },
   });
 
-  // External package plugins activate before OpenCode's compatibility and native
-  // skill sources. Their coalesced skill.updated notification arrives after those
-  // sources, so installing here appends our filter after the complete catalog.
+  // The list handler rebuilds the catalog from the live catalog on every read,
+  // so late-loaded Skills need no event handling to appear. The listener only
+  // makes sure the disabled-Skill filter is registered as soon as any skill
+  // activity happens, instead of waiting for the first RPC list call.
   const events = new AbortController();
   const listener = (async () => {
     try {
