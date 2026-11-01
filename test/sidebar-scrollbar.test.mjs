@@ -61,16 +61,27 @@ function fakeScheduler() {
   return { schedule, cancel, flush, pendingCount };
 }
 
-test("finds only a scrollbox whose content contains the marker", () => {
+test("finds the innermost scrollbox ancestor of the marker", () => {
   const outer = scrollBox();
   const inner = scrollBox(outer.content);
   const marker = node(inner.content);
 
+  // The innermost scrollbox wins, even when one is nested inside another.
   assert.equal(findSidebarScrollBox(marker), inner.box);
 
-  const unrelated = scrollBox();
-  const malformedMarker = node(unrelated.box);
-  assert.equal(findSidebarScrollBox(malformedMarker), undefined);
+  // A marker whose ancestor chain contains no scrollbox does not match.
+  const plain = node(null);
+  const child = node(plain);
+  assert.equal(findSidebarScrollBox(child), undefined);
+});
+
+test("finds a scrollbox the marker is attached to directly (real slot structure)", () => {
+  // In the real OpenCode sidebar the slot content is attached as a direct
+  // child of the ScrollBox (via a layout proxy), not inside its `content`
+  // sub-node. The search must still find the sidebar ScrollBox in that case.
+  const sidebar = scrollBox();
+  const marker = node(sidebar.box);
+  assert.equal(findSidebarScrollBox(marker), sidebar.box);
 });
 
 test("hides the visual scrollbar without disabling scrolling and restores it", () => {
@@ -288,7 +299,9 @@ test("retryFindScrollBox stops retrying once cancelled", () => {
   assert.equal(sched.pendingCount(), 0);
 });
 
-test("retryFindScrollBox reports give-up when there is no marker", () => {
+test("retryFindScrollBox retries while the marker is missing and then gives up with an empty chain", () => {
+  // The marker ref can be assigned after onMount fires, so a missing marker
+  // is "not yet found", not an immediate failure.
   let giveUpAttempts = -1;
   let chain = "unset";
   const sched = fakeScheduler();
@@ -297,9 +310,35 @@ test("retryFindScrollBox reports give-up when there is no marker", () => {
     () => {},
     (attempts, c) => { giveUpAttempts = attempts; chain = c; },
     sched.schedule,
+    sched.cancel,
+    { maxAttempts: 3 }
+  );
+  // tick 1 ran synchronously; flush until the budget is exhausted.
+  sched.flush(); // attempt 2
+  sched.flush(); // attempt 3 -> give up
+  assert.equal(giveUpAttempts, 3);
+  assert.equal(chain, "");
+  assert.equal(sched.pendingCount(), 0);
+  stop();
+});
+
+test("retryFindScrollBox keeps retrying a missing marker until it is attached", () => {
+  const sidebar = scrollBox();
+  let marker = undefined;
+  let foundAttempts = 0;
+  const sched = fakeScheduler();
+  const stop = retryFindScrollBox(
+    () => marker,
+    (_sb, attempts) => { foundAttempts = attempts; },
+    () => {},
+    sched.schedule,
     sched.cancel
   );
+  assert.equal(foundAttempts, 0); // tick 1: marker still missing
+  sched.flush(); // attempt 2: still missing
+  marker = node(sidebar.box); // ref assigned now
+  sched.flush(); // attempt 3: found
+  assert.equal(foundAttempts, 3);
+  assert.equal(sched.pendingCount(), 0);
   stop();
-  assert.equal(giveUpAttempts, 0);
-  assert.equal(chain, "");
 });

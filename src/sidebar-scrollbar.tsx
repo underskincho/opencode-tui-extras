@@ -55,19 +55,15 @@ function isScrollBox(value: Renderable): value is ScrollBox {
     isVerticalScrollBar((value as Partial<ScrollBox>).verticalScrollBar);
 }
 
-function descendsFrom(renderable: Renderable, ancestor: Renderable) {
-  let current: Renderable | null = renderable;
-  while (current) {
-    if (current === ancestor) return true;
-    current = current.parent;
-  }
-  return false;
-}
-
 export function findSidebarScrollBox(marker: Renderable): ScrollBox | undefined {
+  // Return the innermost scrollbox that contains the marker: the first
+  // scrollbox encountered while walking up from the marker. The marker is
+  // appended to the sidebar.content slot, which OpenTUI attaches as a direct
+  // child of the sidebar ScrollBox (not inside its `content` sub-node), so
+  // containment must be judged by the ancestor chain, not by `content`.
   let current = marker.parent;
   while (current) {
-    if (isScrollBox(current) && descendsFrom(marker, current.content)) return current;
+    if (isScrollBox(current)) return current;
     current = current.parent;
   }
   return undefined;
@@ -134,21 +130,22 @@ export function retryFindScrollBox(
   const tick = () => {
     if (stopped) return;
     const marker = getMarker();
-    if (!marker) {
-      stopped = true;
-      onGiveUp(attempts, "");
-      return;
+    if (marker) {
+      const scrollBox = findSidebarScrollBox(marker);
+      if (scrollBox) {
+        stopped = true;
+        onFound(scrollBox, attempts + 1);
+        return;
+      }
     }
-    const scrollBox = findSidebarScrollBox(marker);
-    if (scrollBox) {
-      stopped = true;
-      onFound(scrollBox, attempts + 1);
-      return;
-    }
+    // The marker ref can be assigned after onMount fires (the slot content is
+    // attached to the tree by the reconciler), so a missing marker is a "not
+    // yet found" state, not a failure: keep retrying until the budget is
+    // exhausted.
     attempts += 1;
     if (attempts >= maxAttempts) {
       stopped = true;
-      onGiveUp(attempts, describeChain(marker));
+      onGiveUp(attempts, marker ? describeChain(marker) : "");
       return;
     }
     handle = schedule(tick, delayMs);
@@ -200,7 +197,8 @@ function SidebarScrollbarMarker() {
     logDiagnostic(
       `sidebarScrollbar: mounted; marker=${marker ? String((marker as { id?: unknown }).id ?? "(no-id)") : "(none)"}`
     );
-    if (!marker) return;
+    // Start retrying even if the ref is not assigned yet: the slot content is
+    // attached by the reconciler and the ref can land after onMount.
     stopRetry = retryFindScrollBox(
       () => marker,
       (_scrollBox, attempts) => {
