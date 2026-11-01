@@ -11,7 +11,6 @@ import {
 import { SkillsRpc } from "./skills-rpc.js";
 import {
   groupStatusGlyph,
-  groupStatusLabel,
   groupToggleTarget,
   loadSkillGroups,
   partitionSkills,
@@ -266,34 +265,31 @@ export function SkillsSidebar(props: { context: Context; sessionID: string }) {
           <For each={partitioned().groups}>
             {(entry) => (
               <box>
-                <box flexDirection="row" gap={1} minWidth={0}>
+                <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => toggleGroup(entry)}>
                   <box flexShrink={0} onMouseUp={() => toggleExpand(entry.group.id)}>
                     <text fg={props.context.theme.text.base}>{view.expanded[entry.group.id] ? "▼" : "▶"}</text>
                   </box>
-                  <box flexGrow={1} flexShrink={1} minWidth={0} onMouseUp={() => toggleGroup(entry)}>
-                    <text flexShrink={0} fg={groupStatusColor(props.context, entry.status)}>{groupStatusGlyph(entry.status)}</text>
-                    <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
-                      <b>{entry.group.name}</b>
-                    </text>
-                    <text fg={groupStatusColor(props.context, entry.status)} wrapMode="none" flexShrink={0}>
-                      {groupStatusLabel(entry.status, entry.enabled, entry.disabled)}
-                    </text>
-                  </box>
+                  <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
+                    <b>{entry.group.name}</b>
+                  </text>
+                  <text flexShrink={0} fg={groupStatusColor(props.context, entry.status)} wrapMode="none">{groupStatusGlyph(entry.status)}</text>
                 </box>
                 <Show when={view.expanded[entry.group.id] ?? false}>
-                  <For each={entry.present}>
-                    {(skill) => (
-                      <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => openManager(skill.id)}>
-                        <text flexShrink={0} fg={statusColor(props.context, skill)}>•</text>
-                        <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
-                          <b>{skill.name}</b>
-                        </text>
-                        <text fg={statusColor(props.context, skill)} wrapMode="none" flexShrink={0}>
-                          {skillStatusLabel(skill)}
-                        </text>
-                      </box>
-                    )}
-                  </For>
+                  <box paddingLeft={2}>
+                    <For each={entry.present}>
+                      {(skill) => (
+                        <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => openManager(skill.id)}>
+                          <text flexShrink={0} fg={statusColor(props.context, skill)}>•</text>
+                          <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
+                            <b>{skill.name}</b>
+                          </text>
+                          <text fg={statusColor(props.context, skill)} wrapMode="none" flexShrink={0}>
+                            {skillStatusLabel(skill)}
+                          </text>
+                        </box>
+                      )}
+                    </For>
+                  </box>
                 </Show>
               </box>
             )}
