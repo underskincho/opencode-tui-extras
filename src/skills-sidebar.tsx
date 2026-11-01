@@ -236,6 +236,21 @@ export function SkillsSidebar(props: { context: Context; sessionID: string }) {
     void openSkillsManager(props.context, location(), id);
   };
 
+  const toggleSkill = (skill: ManagedSkill) => {
+    void (async () => {
+      try {
+        const rpc = props.context.client.rpc(SkillsRpc);
+        await rpc.setDisabled({ id: skill.id, disabled: !skill.disabled }, { location: location() });
+      } catch (error) {
+        props.context.ui.toast.show({
+          title: "Could not update Skill",
+          message: errorMessage(error),
+          variant: "error",
+        });
+      }
+    })();
+  };
+
   return (
     <Show when={list().length > 0}>
       <box>
@@ -266,7 +281,7 @@ export function SkillsSidebar(props: { context: Context; sessionID: string }) {
             {(entry) => (
               <box>
                 <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => toggleGroup(entry)}>
-                  <box flexShrink={0} onMouseUp={() => toggleExpand(entry.group.id)}>
+                  <box flexShrink={0} onMouseUp={(event) => { event.stopPropagation(); toggleExpand(entry.group.id); }}>
                     <text fg={props.context.theme.text.base}>{view.expanded[entry.group.id] ? "▼" : "▶"}</text>
                   </box>
                   <text flexShrink={0} fg={groupStatusColor(props.context, entry.status)} wrapMode="none">{groupStatusGlyph(entry.status)}</text>
@@ -278,7 +293,7 @@ export function SkillsSidebar(props: { context: Context; sessionID: string }) {
                   <box paddingLeft={2}>
                     <For each={entry.present}>
                       {(skill) => (
-                        <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => openManager(skill.id)}>
+                        <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => toggleSkill(skill)}>
                           <text flexShrink={0} fg={statusColor(props.context, skill)}>•</text>
                           <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
                             <b>{skill.name}</b>
@@ -296,7 +311,7 @@ export function SkillsSidebar(props: { context: Context; sessionID: string }) {
           </For>
           <For each={partitioned().ungrouped}>
             {(skill) => (
-              <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => openManager(skill.id)}>
+              <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => toggleSkill(skill)}>
                 <text flexShrink={0} fg={statusColor(props.context, skill)}>•</text>
                 <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
                   <b>{skill.name}</b>
