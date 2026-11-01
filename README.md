@@ -24,6 +24,7 @@ OpenCode v2 TUI enhancements: Context, Skills, and MCP sidebars, a transparent i
 - Dynamic separators that follow the available sidebar width
 - Green `Connected` MCP status with native MCP management dialogs
 - Searchable Skills manager with persistent per-project enable/disable state
+- Collapsible Skills groups with a master toggle, mixed state, and preserved per-skill toggles
 
 The plugin works with any provider that reports standard OpenCode token usage fields.
 
@@ -126,6 +127,24 @@ The switch controls future loads, not history that has already been materialized
 | Enable during an existing session | Makes it discoverable on the next request; the full body is injected only if the Skill is subsequently invoked |
 
 Changing the setting cannot alter a model request that is already in flight. Context compaction is also not a guaranteed unload mechanism: Skill text may remain verbatim in the recent window or be carried into the generated summary. The current OpenCode API has no session-level Skill unload operation, so starting a new session is the reliable way to guarantee that previously loaded Skill text is absent.
+
+### Skill groups
+
+Skills can be organized into collapsible groups defined in a global file at `~/.config/opencode/skills-groups.json` (override the path with `OPENCODE_SKILLS_GROUPS_FILE`). The file is a top-level object with a `groups` array; each group has an `id`, a `name`, and a `members` list of Skill IDs:
+
+```json
+{
+  "groups": [
+    { "id": "unity", "name": "Unity", "members": ["unity-cli", "new-unity-project"] }
+  ]
+}
+```
+
+Membership is by Skill ID (the folder name), independent of where the Skill lives. A missing or malformed file, or any malformed entry, is ignored gracefully, and Skills that are not members of any group render as normal rows.
+
+In the sidebar, each group renders as a collapsible header that is collapsed by default. The header has two zones: an expand zone (the `▼`/`▶` glyph) that shows or hides the group's members, and a master zone (the group name and status) that toggles every member at once. The master toggle disables all members when every member is currently enabled, and enables all members otherwise (including the mixed case). A mixed state shows `◑ n on, m off`; all enabled shows `✓ All on`; all disabled shows `○ All off`. Individual toggles are preserved: clicking a member still opens the per-skill manager.
+
+Group definitions are global. Per-Skill enable/disable state stays per-project in the existing `skills.disabled:<projectID>` storage key and is unchanged; a master toggle is applied through the `setGroupDisabled` RPC, which writes once and reloads the catalog.
 
 ### Transparent mode
 

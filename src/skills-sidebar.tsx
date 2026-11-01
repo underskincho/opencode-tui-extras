@@ -9,6 +9,15 @@ import {
   type SkillDescriptor,
 } from "./skills-model.js";
 import { SkillsRpc } from "./skills-rpc.js";
+import {
+  groupStatusGlyph,
+  groupStatusLabel,
+  groupToggleTarget,
+  loadSkillGroups,
+  partitionSkills,
+  type GroupStatus,
+  type GroupView,
+} from "./skills-groups.js";
 
 type Location = ReturnType<Context["data"]["location"]["default"]>;
 
@@ -177,13 +186,46 @@ function statusColor(context: Context, skill: ManagedSkill) {
   return context.theme.text.feedback.success.base;
 }
 
+function groupStatusColor(context: Context, status: GroupStatus) {
+  if (status === "all-on") return context.theme.text.feedback.success.base;
+  if (status === "all-off") return context.theme.text.muted;
+  return context.theme.text.feedback.warning.base;
+}
+
 export function SkillsSidebar(props: { context: Context; sessionID: string }) {
-  const [view, updateView] = props.context.storage.store("skills-sidebar", { initial: { open: true } });
+  const [view, updateView] = props.context.storage.store("skills-sidebar", {
+    initial: { open: true, expanded: {} as Record<string, boolean> },
+  });
   const session = createMemo(() => props.context.data.session.get(props.sessionID));
   const location = () => session()?.location ?? props.context.location ?? props.context.data.location.default();
   const [skills, { refetch }] = createResource(location, (value) => loadManagedSkills(props.context, value));
   const list = createMemo(() => skills() ?? []);
   const counts = createMemo(() => skillCounts(list()));
+  const [groups] = createResource(async () => loadSkillGroups());
+  const partitioned = createMemo(() => partitionSkills(list(), groups() ?? []));
+
+  const toggleExpand = (id: string) => {
+    void updateView((draft) => {
+      draft.expanded = { ...draft.expanded, [id]: !draft.expanded[id] };
+    }).catch((error) => console.error("Failed to persist Skills sidebar state", error));
+  };
+
+  const toggleGroup = (entry: GroupView) => {
+    const target = groupToggleTarget(entry.status);
+    const ids = entry.present.map((skill) => skill.id);
+    void (async () => {
+      try {
+        const rpc = props.context.client.rpc(SkillsRpc);
+        await rpc.setGroupDisabled({ ids, disabled: target }, { location: location() });
+      } catch (error) {
+        props.context.ui.toast.show({
+          title: "Could not update Skill group",
+          message: errorMessage(error),
+          variant: "error",
+        });
+      }
+    })();
+  };
 
   const stop = props.context.data.on("skill.updated", (event) => {
     if (!sameLocation(event.location, location())) return;
@@ -221,7 +263,42 @@ export function SkillsSidebar(props: { context: Context; sessionID: string }) {
           </text>
         </box>
         <Show when={list().length <= 2 || view.open}>
-          <For each={list()}>
+          <For each={partitioned().groups}>
+            {(entry) => (
+              <box>
+                <box flexDirection="row" gap={1} minWidth={0}>
+                  <box flexShrink={0} onMouseUp={() => toggleExpand(entry.group.id)}>
+                    <text fg={props.context.theme.text.base}>{view.expanded[entry.group.id] ? "▼" : "▶"}</text>
+                  </box>
+                  <box flexGrow={1} flexShrink={1} minWidth={0} onMouseUp={() => toggleGroup(entry)}>
+                    <text flexShrink={0} fg={groupStatusColor(props.context, entry.status)}>{groupStatusGlyph(entry.status)}</text>
+                    <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
+                      <b>{entry.group.name}</b>
+                    </text>
+                    <text fg={groupStatusColor(props.context, entry.status)} wrapMode="none" flexShrink={0}>
+                      {groupStatusLabel(entry.status, entry.enabled, entry.disabled)}
+                    </text>
+                  </box>
+                </box>
+                <Show when={view.expanded[entry.group.id] ?? false}>
+                  <For each={entry.present}>
+                    {(skill) => (
+                      <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => openManager(skill.id)}>
+                        <text flexShrink={0} fg={statusColor(props.context, skill)}>•</text>
+                        <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
+                          <b>{skill.name}</b>
+                        </text>
+                        <text fg={statusColor(props.context, skill)} wrapMode="none" flexShrink={0}>
+                          {skillStatusLabel(skill)}
+                        </text>
+                      </box>
+                    )}
+                  </For>
+                </Show>
+              </box>
+            )}
+          </For>
+          <For each={partitioned().ungrouped}>
             {(skill) => (
               <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => openManager(skill.id)}>
                 <text flexShrink={0} fg={statusColor(props.context, skill)}>•</text>

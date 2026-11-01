@@ -64,6 +64,23 @@ export async function installSkillsServer(context: Context) {
       await context.skill.reload();
       return list();
     },
+    setGroupDisabled: async (input) => {
+      const value = input as { ids: string[]; disabled: boolean };
+      // Materialize the catalog first (list() runs ensureFilter + context.skill.list(),
+      // which is what populates `catalog`), then ignore ids not installed in this project.
+      const { skills: catalogSkills } = await list();
+      const known = new Set(catalogSkills.map((skill) => skill.id));
+      const ids = Array.isArray(value.ids)
+        ? [...new Set(value.ids.filter((id) => typeof id === "string" && id.trim() !== "").map((id) => id.trim()).filter((id) => known.has(id)))]
+        : [];
+      for (const id of ids) {
+        if (value.disabled) disabled.add(id);
+        else disabled.delete(id);
+      }
+      await context.storage.set(storageKey, [...disabled].sort((left, right) => left.localeCompare(right)));
+      await context.skill.reload();
+      return list();
+    },
   });
 
   // External package plugins activate before OpenCode's compatibility and native

@@ -49,6 +49,18 @@ export const SkillsRpc = Rpc.define({
       },
       output: managedSkillsSchema,
     },
+    setGroupDisabled: {
+      input: {
+        type: "object",
+        properties: {
+          ids: { type: "array", items: { type: "string" } },
+          disabled: { type: "boolean" },
+        },
+        required: ["ids", "disabled"],
+        additionalProperties: false,
+      },
+      output: managedSkillsSchema,
+    },
   },
   events: {},
 });

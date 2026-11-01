@@ -17,6 +17,7 @@ function fakeContext(initialDisabled = []) {
   let handlers;
   let transformDisposed = false;
   let rpcDisposed = false;
+  let setCount = 0;
 
   const current = async () => {
     const values = new Map(source.map((item) => [item.id, { ...item }]));
@@ -34,7 +35,7 @@ function fakeContext(initialDisabled = []) {
     },
     storage: {
       get: async (key) => stored.get(key),
-      set: async (key, value) => stored.set(key, value),
+      set: async (key, value) => { setCount += 1; stored.set(key, value); },
     },
     skill: {
       transform: async (callback) => {
@@ -67,6 +68,7 @@ function fakeContext(initialDisabled = []) {
     stored,
     current,
     handlers: () => handlers,
+    setCount: () => setCount,
     disposed: () => ({ transform: transformDisposed, rpc: rpcDisposed }),
   };
 }
@@ -95,6 +97,34 @@ test("persists disabled Skills and removes them from the live catalog", async ()
   await handlers.setDisabled({ id: "alpha", disabled: true });
   assert.deepEqual((await fake.current()).map((item) => item.id), ["beta"]);
   assert.deepEqual(fake.stored.get(disabledSkillsStorageKey("project-1")), ["alpha"]);
+
+  await dispose();
+  assert.deepEqual(fake.disposed(), { transform: true, rpc: true });
+});
+
+test("setGroupDisabled toggles all members in one write and updates the catalog", async () => {
+  const fake = fakeContext(["beta"]);          // alpha enabled, beta disabled
+  const dispose = await installSkillsServer(fake.context);
+  const handlers = fake.handlers();
+  const key = disabledSkillsStorageKey("project-1");
+
+  const before = fake.setCount();
+  const result = await handlers.setGroupDisabled({ ids: ["alpha", "beta"], disabled: true });
+  assert.equal(fake.setCount() - before, 1);                       // exactly one storage write
+  assert.deepEqual(result.skills.filter((s) => s.id === "alpha" || s.id === "beta")
+    .map((s) => [s.id, s.disabled]), [["alpha", true], ["beta", true]]);
+  assert.deepEqual((await fake.current()).map((s) => s.id), []);   // both removed from live catalog
+  assert.deepEqual(fake.stored.get(key), ["alpha", "beta"]);
+
+  const before2 = fake.setCount();
+  await handlers.setGroupDisabled({ ids: ["alpha", "beta"], disabled: false });
+  assert.equal(fake.setCount() - before2, 1);
+  assert.deepEqual((await fake.current()).map((s) => s.id), ["alpha", "beta"]);
+  assert.deepEqual(fake.stored.get(key), []);
+
+  // Unknown ids are ignored (no crash, no spurious entries).
+  await handlers.setGroupDisabled({ ids: ["alpha", "ghost"], disabled: true });
+  assert.deepEqual(fake.stored.get(key), ["alpha"]);
 
   await dispose();
   assert.deepEqual(fake.disposed(), { transform: true, rpc: true });
