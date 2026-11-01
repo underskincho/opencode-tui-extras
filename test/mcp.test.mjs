@@ -52,6 +52,8 @@ test("row clicks toggle directly via the built-in mcp endpoints and refresh on s
   assert.match(source, /data\.on\("mcp\.status\.changed"/);
   assert.match(source, /sameLocation\(event\.location, location\(\)\)/);
   assert.match(source, /mcp\.server\.invalidate\(current\)/);
+  assert.match(source, /mcp\.server\.sync\(current\)/);
+  assert.match(source, /onCleanup\(stop\)/);
   assert.match(source, /onMouseUp=\{\(\) => toggleServer\(server\)\}/);
   assert.doesNotMatch(source, /keymap\.dispatch\("mcp\.list"/);
   assert.doesNotMatch(source, /mcpSelectionCommands/);
