@@ -4,10 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  describeChain,
   diagnosticLogPath,
   findSidebarScrollBox,
   hideSidebarScrollbar,
   logDiagnostic,
+  retryFindScrollBox,
 } from "../dist/sidebar-scrollbar.js";
 import { setupV2 } from "../dist/tui-v2.js";
 
@@ -35,6 +37,28 @@ function scrollBox(parent = null) {
   };
   Object.assign(box, { content, verticalScrollBar });
   return { box, content, verticalScrollBar, resets: () => resets };
+}
+
+// A controllable scheduler: records scheduled callbacks, lets the test flush
+// one "round" of them manually, and supports cancellation. Lets us drive the
+// retry loop deterministically without real timers.
+function fakeScheduler() {
+  const pending = [];
+  const schedule = (fn, ms) => {
+    const handle = { fn, ms, cancelled: false };
+    pending.push(handle);
+    return handle;
+  };
+  const cancel = (handle) => {
+    handle.cancelled = true;
+  };
+  const flush = () => {
+    const toRun = pending.filter((h) => !h.cancelled);
+    pending.length = 0;
+    for (const h of toRun) h.fn();
+  };
+  const pendingCount = () => pending.length;
+  return { schedule, cancel, flush, pendingCount };
 }
 
 test("finds only a scrollbox whose content contains the marker", () => {
@@ -167,4 +191,115 @@ test("registers Context and Sidebar scrollbar options independently", () => {
   assert.equal(independent.claims[0].append, "sidebar.content");
   disposeIndependent();
   assert.equal(independent.disposals(), 1);
+});
+
+test("describeChain reports ScrollBox flags along the parent chain", () => {
+  const sidebar = scrollBox();
+  const marker = node(sidebar.content);
+  const chain = describeChain(marker);
+  assert.match(chain, /isScrollBox=false/); // the marker itself is not a ScrollBox
+  assert.match(chain, /isScrollBox=true/); // the sidebar ScrollBox is detected
+});
+
+test("describeChain is a single node when the marker has no parent", () => {
+  const marker = node(null);
+  const chain = describeChain(marker);
+  assert.ok(!chain.includes(" -> "));
+  assert.match(chain, /isScrollBox=false/);
+});
+
+test("retryFindScrollBox finds the ScrollBox on the first attempt", () => {
+  const sidebar = scrollBox();
+  const marker = node(sidebar.content);
+  let foundAttempts = 0;
+  const sched = fakeScheduler();
+  const stop = retryFindScrollBox(
+    () => marker,
+    (_sb, attempts) => { foundAttempts = attempts; },
+    () => {},
+    sched.schedule,
+    sched.cancel
+  );
+  stop();
+  assert.equal(foundAttempts, 1);
+  assert.equal(sched.pendingCount(), 0);
+});
+
+test("retryFindScrollBox keeps retrying until the marker is attached", () => {
+  const sidebar = scrollBox();
+  const marker = node(null);
+  let foundAttempts = 0;
+  let giveUpAttempts = 0;
+  const sched = fakeScheduler();
+  const stop = retryFindScrollBox(
+    () => marker,
+    (_sb, attempts) => { foundAttempts = attempts; },
+    (attempts) => { giveUpAttempts = attempts; },
+    sched.schedule,
+    sched.cancel
+  );
+  assert.equal(foundAttempts, 0); // synchronous attempt 1: not attached yet
+  assert.equal(giveUpAttempts, 0);
+  sched.flush(); // attempt 2: still not attached
+  assert.equal(foundAttempts, 0);
+  marker.parent = sidebar.content; // now attached
+  sched.flush(); // attempt 3: found
+  assert.equal(foundAttempts, 3);
+  assert.equal(giveUpAttempts, 0);
+  assert.equal(sched.pendingCount(), 0);
+  stop();
+});
+
+test("retryFindScrollBox gives up after maxAttempts and reports the chain", () => {
+  const marker = node(null);
+  let giveUpAttempts = 0;
+  let chain = "";
+  const sched = fakeScheduler();
+  const stop = retryFindScrollBox(
+    () => marker,
+    () => {},
+    (attempts, c) => { giveUpAttempts = attempts; chain = c; },
+    sched.schedule,
+    sched.cancel,
+    { maxAttempts: 3 }
+  );
+  sched.flush(); // attempt 2
+  sched.flush(); // attempt 3 -> give up
+  assert.equal(giveUpAttempts, 3);
+  assert.match(chain, /isScrollBox=false/);
+  assert.equal(sched.pendingCount(), 0);
+  stop();
+});
+
+test("retryFindScrollBox stops retrying once cancelled", () => {
+  const marker = node(null);
+  let foundAttempts = 0;
+  const sched = fakeScheduler();
+  const stop = retryFindScrollBox(
+    () => marker,
+    (_sb, attempts) => { foundAttempts = attempts; },
+    () => {},
+    sched.schedule,
+    sched.cancel
+  );
+  stop(); // cancel the pending retry
+  sched.flush(); // must not run
+  assert.equal(foundAttempts, 0);
+  assert.equal(sched.pendingCount(), 0);
+});
+
+test("retryFindScrollBox reports give-up when there is no marker", () => {
+  let giveUpAttempts = -1;
+  let chain = "unset";
+  const sched = fakeScheduler();
+  const stop = retryFindScrollBox(
+    () => undefined,
+    () => {},
+    (attempts, c) => { giveUpAttempts = attempts; chain = c; },
+    sched.schedule,
+    sched.cancel
+  );
+  stop();
+  assert.equal(giveUpAttempts, 0);
+  assert.equal(chain, "");
 });
