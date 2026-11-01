@@ -269,10 +269,10 @@ export function SkillsSidebar(props: { context: Context; sessionID: string }) {
                   <box flexShrink={0} onMouseUp={() => toggleExpand(entry.group.id)}>
                     <text fg={props.context.theme.text.base}>{view.expanded[entry.group.id] ? "▼" : "▶"}</text>
                   </box>
+                  <text flexShrink={0} fg={groupStatusColor(props.context, entry.status)} wrapMode="none">{groupStatusGlyph(entry.status)}</text>
                   <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
                     <b>{entry.group.name}</b>
                   </text>
-                  <text flexShrink={0} fg={groupStatusColor(props.context, entry.status)} wrapMode="none">{groupStatusGlyph(entry.status)}</text>
                 </box>
                 <Show when={view.expanded[entry.group.id] ?? false}>
                   <box paddingLeft={2}>
