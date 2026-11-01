@@ -1,4 +1,7 @@
 /** @jsxImportSource @opentui/solid */
+import { appendFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { BoxRenderable, Renderable } from "@opentui/core";
 import type { Context } from "@opencode/plugin/tui/plugin";
 import { onCleanup, onMount } from "solid-js";
@@ -14,6 +17,29 @@ type ScrollBox = Renderable & {
 };
 
 const hiddenBars = new WeakMap<VerticalScrollBar, number>();
+
+export function diagnosticLogPath(): string {
+  return (
+    process.env.OPENCODE_TUI_EXTRAS_DIAGNOSTICS ??
+    path.join(os.homedir(), ".config", "opencode", "tui-extras-diagnostics.log")
+  );
+}
+
+/**
+ * Records a best-effort diagnostic entry. In a full-screen TUI the process
+ * stderr is not visible, so failures are surfaced through a log file the
+ * user can open; console.warn is kept as a fallback for headless runs.
+ */
+export function logDiagnostic(message: string): boolean {
+  const entry = `[${new Date().toISOString()}] ${message}\n`;
+  try {
+    appendFileSync(diagnosticLogPath(), entry);
+    return true;
+  } catch {
+    console.warn("[opencode-tui-extras]", message);
+    return false;
+  }
+}
 
 function isVerticalScrollBar(value: unknown): value is VerticalScrollBar {
   if (!value || typeof value !== "object") return false;
@@ -51,8 +77,9 @@ export function hideSidebarScrollbar(marker: Renderable) {
   const scrollBox = findSidebarScrollBox(marker);
   if (!scrollBox) {
     // The marker is not inside a sidebar ScrollBox, so there is nothing to
-    // hide. Surface this so a no-op (scrollbar still visible) is debuggable.
-    console.warn("[opencode-tui-extras] sidebarScrollbar: no sidebar ScrollBox found; scrollbar stays visible");
+    // hide. Surface this in the diagnostics file (stderr is not visible in a
+    // full-screen TUI) so a no-op is debuggable.
+    logDiagnostic("sidebarScrollbar: no sidebar ScrollBox found; scrollbar stays visible");
     return () => {};
   }
 
