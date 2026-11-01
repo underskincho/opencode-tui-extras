@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mcpStatusLabel } from "../dist/tui.js";
-import { mcpSelectionCommands, mcpStatusColor } from "../dist/mcp-sidebar.js";
+import { mcpSelectionCommands, mcpStatusColor, mcpToggleAction } from "../dist/mcp-sidebar.js";
 import { readFile } from "node:fs/promises";
 
 test("uses clear MCP status labels", () => {
@@ -10,6 +10,14 @@ test("uses clear MCP status labels", () => {
   assert.equal(mcpStatusLabel("failed"), "Error");
   assert.equal(mcpStatusLabel("needs_auth"), "Sign in");
   assert.equal(mcpStatusLabel("disabled"), "Disabled");
+});
+
+test("mcpToggleAction: disabled connects, everything else disconnects", () => {
+  assert.equal(mcpToggleAction("disabled"), "connect");
+  assert.equal(mcpToggleAction("connected"), "disconnect");
+  assert.equal(mcpToggleAction("pending"), "disconnect");
+  assert.equal(mcpToggleAction("failed"), "disconnect");
+  assert.equal(mcpToggleAction("needs_auth"), "disconnect");
 });
 
 test("only changes the Connected label color and preserves other status colors", () => {

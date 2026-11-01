@@ -27,6 +27,13 @@ export function mcpStatusColor(context: Context, status: McpStatus, label = fals
   return context.theme.text.muted;
 }
 
+/** A row click flips the server's disabled state: a disabled server is connected,
+ * any other status (connected, pending, failed, needs_auth) is disconnected.
+ * Sign-in for needs_auth servers stays in the native manager (/mcps). */
+export function mcpToggleAction(status: McpStatus): "connect" | "disconnect" {
+  return status === "disabled" ? "connect" : "disconnect";
+}
+
 export function mcpSelectionCommands(serverNames: readonly string[], selected: string): string[] {
   const index = [...serverNames].sort().indexOf(selected);
   if (index < 0) return [];
