@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mcpStatusLabel } from "../dist/tui.js";
-import { mcpSelectionCommands, mcpStatusColor, mcpToggleAction } from "../dist/mcp-sidebar.js";
+import { mcpStatusColor, mcpToggleAction } from "../dist/mcp-sidebar.js";
 import { readFile } from "node:fs/promises";
 
 test("uses clear MCP status labels", () => {
@@ -43,23 +43,17 @@ test("only changes the Connected label color and preserves other status colors",
   assert.equal(mcpStatusColor(context, "needs_auth"), warning);
 });
 
-test("moves the native MCP dialog to the clicked server", () => {
-  assert.deepEqual(mcpSelectionCommands(["zread", "context7", "github"], "context7"), [
-    "dialog.select.home",
-  ]);
-  assert.deepEqual(mcpSelectionCommands(["zread", "context7", "github"], "zread"), [
-    "dialog.select.home",
-    "dialog.select.next",
-    "dialog.select.next",
-  ]);
-  assert.deepEqual(mcpSelectionCommands(["zread"], "missing"), []);
-});
-
-test("delegates MCP dialogs to the native command without custom connection handling", async () => {
+test("row clicks toggle directly via the built-in mcp endpoints and refresh on status changes", async () => {
   const source = await readFile(new URL("../src/mcp-sidebar.tsx", import.meta.url), "utf8");
 
-  assert.match(source, /props\.context\.keymap\.dispatch\("mcp\.list", serverName\)/);
-  assert.match(source, /"dialog\.select\.home"/);
-  assert.match(source, /"dialog\.select\.next"/);
-  assert.doesNotMatch(source, /McpDialog|ui\.dialog|client\.mcp|keymap\.layer|setTimeout|createSignal/);
+  assert.match(source, /client\.mcp\.connect\(\{ server: server\.name, location: ref \}\)/);
+  assert.match(source, /client\.mcp\.disconnect\(\{ server: server\.name, location: ref \}\)/);
+  assert.match(source, /variant: "error"/);
+  assert.match(source, /data\.on\("mcp\.status\.changed"/);
+  assert.match(source, /sameLocation\(event\.location, location\(\)\)/);
+  assert.match(source, /mcp\.server\.invalidate\(current\)/);
+  assert.match(source, /onMouseUp=\{\(\) => toggleServer\(server\)\}/);
+  assert.doesNotMatch(source, /keymap\.dispatch\("mcp\.list"/);
+  assert.doesNotMatch(source, /mcpSelectionCommands/);
+  assert.doesNotMatch(source, /openDialog/);
 });

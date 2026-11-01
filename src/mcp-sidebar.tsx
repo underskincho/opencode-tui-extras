@@ -1,9 +1,10 @@
 /** @jsxImportSource @opentui/solid */
 import type { Context } from "@opencode/plugin/tui/plugin";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, For, onCleanup, Show } from "solid-js";
 
 type McpServer = NonNullable<ReturnType<Context["data"]["location"]["mcp"]["server"]["list"]>>[number];
 type McpStatus = McpServer["status"]["status"];
+type Location = ReturnType<Context["data"]["location"]["default"]>;
 
 export function mcpStatusLabel(status: McpStatus): string {
   switch (status) {
@@ -34,10 +35,13 @@ export function mcpToggleAction(status: McpStatus): "connect" | "disconnect" {
   return status === "disabled" ? "connect" : "disconnect";
 }
 
-export function mcpSelectionCommands(serverNames: readonly string[], selected: string): string[] {
-  const index = [...serverNames].sort().indexOf(selected);
-  if (index < 0) return [];
-  return ["dialog.select.home", ...Array.from({ length: index }, () => "dialog.select.next")];
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function sameLocation(left: Location | undefined, right: Location) {
+  if (!left) return true;
+  return left.directory === right.directory && left.workspaceID === right.workspaceID;
 }
 
 export function McpSidebar(props: { context: Context; sessionID: string }) {
@@ -49,21 +53,29 @@ export function McpSidebar(props: { context: Context; sessionID: string }) {
   const errors = createMemo(
     () => list().filter((server) => server.status.status === "failed" || server.status.status === "needs_auth").length,
   );
-  const openDialog = (serverName: string) => {
-    const commands = mcpSelectionCommands(list().map((server) => server.name), serverName);
-    let focused = false;
-    const focusServer = () => {
-      if (focused || commands.length === 0) return;
-      const available = new Set(props.context.keymap.commands().map((command) => command.id));
-      if (!commands.every((command) => available.has(command))) return;
-      focused = true;
-      for (const command of commands) props.context.keymap.dispatch(command);
-    };
-
-    props.context.renderer.once("frame", focusServer);
-    props.context.keymap.dispatch("mcp.list", serverName);
-    queueMicrotask(focusServer);
+  const toggleServer = (server: McpServer) => {
+    const target = mcpToggleAction(server.status.status);
+    const ref = { directory: location().directory };
+    const call =
+      target === "connect"
+        ? () => props.context.client.mcp.connect({ server: server.name, location: ref })
+        : () => props.context.client.mcp.disconnect({ server: server.name, location: ref });
+    void call().catch((error) => {
+      props.context.ui.toast.show({
+        title: target === "connect" ? `Could not connect ${server.name}` : `Could not disconnect ${server.name}`,
+        message: errorMessage(error),
+        variant: "error",
+      });
+    });
   };
+
+  const stop = props.context.data.on("mcp.status.changed", (event) => {
+    if (!sameLocation(event.location, location())) return;
+    const current = location();
+    props.context.data.location.mcp.server.invalidate(current);
+    void props.context.data.location.mcp.server.sync(current);
+  });
+  onCleanup(stop);
 
   return (
     <Show when={list().length > 0}>
@@ -91,7 +103,7 @@ export function McpSidebar(props: { context: Context; sessionID: string }) {
         <Show when={list().length <= 2 || view.open}>
           <For each={list()}>
             {(server) => (
-              <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => openDialog(server.name)}>
+              <box flexDirection="row" gap={1} minWidth={0} onMouseUp={() => toggleServer(server)}>
                 <text flexShrink={0} fg={mcpStatusColor(props.context, server.status.status)}>•</text>
                 <text fg={props.context.theme.text.base} wrapMode="none" truncate flexGrow={1} flexShrink={1} minWidth={0}>
                   <b>{server.name}</b>
