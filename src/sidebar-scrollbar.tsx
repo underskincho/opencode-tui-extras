@@ -49,7 +49,12 @@ export function findSidebarScrollBox(marker: Renderable): ScrollBox | undefined 
 
 export function hideSidebarScrollbar(marker: Renderable) {
   const scrollBox = findSidebarScrollBox(marker);
-  if (!scrollBox) return () => {};
+  if (!scrollBox) {
+    // The marker is not inside a sidebar ScrollBox, so there is nothing to
+    // hide. Surface this so a no-op (scrollbar still visible) is debuggable.
+    console.warn("[opencode-tui-extras] sidebarScrollbar: no sidebar ScrollBox found; scrollbar stays visible");
+    return () => {};
+  }
 
   const bar = scrollBox.verticalScrollBar;
   const count = hiddenBars.get(bar) ?? 0;
