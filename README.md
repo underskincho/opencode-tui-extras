@@ -22,7 +22,7 @@ OpenCode v2 TUI enhancements: Context, Skills, and MCP sidebars, a transparent i
 - Session cumulative cost, matching OpenCode's built-in Context behavior
 - Collapsible Context details with the current percentage in the collapsed title
 - Dynamic separators that follow the available sidebar width
-- Green `Connected` MCP status with native MCP management dialogs
+- Green `Connected` MCP status with direct click-to-toggle and the native MCP manager (`/mcps`)
 - Searchable Skills manager with persistent per-project enable/disable state
 - Collapsible Skills groups with a master toggle, mixed state, and preserved per-skill toggles
 
@@ -106,7 +106,7 @@ The plugin selects the latest token-bearing assistant message after the most rec
 
 The optional MCP sidebar changes only sidebar presentation. The `Connected` label uses the same theme success color as its status dot. When there are more than two servers, clicking the `MCP` title collapses or expands the server list; the collapsed title summarizes connected servers and issues. The issue count combines failed servers and servers that require authentication.
 
-Clicking a server dispatches OpenCode's native `mcp.list` command. When the native selection commands are available, the plugin moves the dialog selection to the clicked server; otherwise the dialog keeps its native default selection. Connect, disconnect, retry, authentication, error details, the native Space-key action, and live status updates remain managed by OpenCode.
+Clicking a server enables or disables it directly: a disabled server is connected, any other status (connected, connecting, error, or sign-in needed) is disabled — no dialog opens. Toggling uses OpenCode's built-in MCP connect/disconnect endpoints, so the state is persisted to your config exactly like the manager does and survives restarts, and the row updates live when the status changes. Authentication, error details, retry, and adding or removing servers remain in OpenCode's native MCP manager, reachable from the `/mcps` command; errors while toggling show as a toast.
 
 ### Skills management
 
